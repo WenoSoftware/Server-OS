@@ -65,6 +65,7 @@ func startDaemon(port string) {
 	http.HandleFunc("/toggle", handlers.HandleToggle)
 	http.HandleFunc("/verify-chunk", handlers.HandleVerifyChunk)
 	http.HandleFunc("/get-chunk", handlers.HandleGetChunk)
+	http.HandleFunc("/publish", handlers.HandlePublish) // 👈 Add this line
 	http.HandleFunc("/site/", gateway.HandleGateway)
 
 	// Start background mDNS-style UDP peer discovery

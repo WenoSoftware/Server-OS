@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Server OS Publisher</title>
+</head>
+<body>
+    <h2>Publish to Server OS Swarm</h2>
+    <textarea id="user-content" placeholder="Type your decentralized post here..."></textarea>
+    <br>
+    <button id="publish-btn">Publish to P2P</button>
+    
+    <p id="result-link"></p>
+
+    <script type="module">
+        import ServerOSClient from './serveros.js';
+
+        const serverOS = new ServerOSClient(8080);
+        const btn = document.getElementById('publish-btn');
+
+        btn.addEventListener('click', async () => {
+            const text = document.getElementById('user-content').value;
+            if (!text) return alert('Please enter some content first!');
+
+            try {
+                btn.innerText = "Chunking & Storing locally...";
+                
+                // Call local daemon via SDK
+                const res = await serverOS.publishData('post.html', text);
+                
+                const siteUrl = serverOS.getSiteUrl(res.manifestHash);
+                document.getElementById('result-link').innerHTML = 
+                    `Success! View your P2P site here: <a href="${siteUrl}" target="_blank">${siteUrl}</a>`;
+                
+                btn.innerText = "Published!";
+            } catch (err) {
+                alert('Is your Server OS daemon running? Check console for details.');
+                btn.innerText = "Publish to P2P";
+            }
+        });
+    </script>
+</body>
+</html>
