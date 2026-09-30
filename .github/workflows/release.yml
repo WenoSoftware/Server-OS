@@ -3,7 +3,10 @@ name: Release Weno Server OS
 on:
   push:
     tags:
-      - 'v*' # Triggers whenever you push a semantic version tag (e.g., v1.0.0)
+      - 'v*'
+
+permissions:
+  contents: write # 👈 This grants the workflow permission to create releases and upload files
 
 jobs:
   release:
@@ -14,16 +17,16 @@ jobs:
         include:
           - os: linux
             arch: amd64
-            binary_name: serveros-linux-amd64
+            binary_name: weno-linux-amd64
           - os: darwin
             arch: amd64
-            binary_name: serveros-darwin-amd64
+            binary_name: weno-darwin-amd64
           - os: darwin
             arch: arm64
-            binary_name: serveros-darwin-arm64
+            binary_name: weno-darwin-arm64
           - os: windows
             arch: amd64
-            binary_name: serveros-windows-amd64.exe
+            binary_name: weno-windows-amd64.exe
 
     steps:
       - name: Checkout Code
