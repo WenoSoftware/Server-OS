@@ -13,6 +13,7 @@ import (
 	"serveros/internal/gateway"
 	"serveros/internal/handlers"
 	"serveros/internal/storage"
+	"serveros/internal/p2p"
 )
 
 func main() {
@@ -20,6 +21,16 @@ func main() {
 		printUsage()
 		os.Exit(1)
 	}
+
+	// 1. Initialize the P2P networking node globally
+	p2pHost, err := p2p.InitP2PNode()
+	if err != nil {
+		log.Fatalf("Failed to start P2P node: %v", err)
+	}
+	defer p2pHost.Close()
+
+	// 2. Set up the wide-area libp2p chunk stream protocol handler
+	p2p.SetupChunkProtocol(p2pHost)
 
 	command := os.Args[1]
 
@@ -65,16 +76,16 @@ func startDaemon(port string) {
 	http.HandleFunc("/toggle", handlers.HandleToggle)
 	http.HandleFunc("/verify-chunk", handlers.HandleVerifyChunk)
 	http.HandleFunc("/get-chunk", handlers.HandleGetChunk)
-	http.HandleFunc("/publish", handlers.HandlePublish) // 👈 Add this line
+	http.HandleFunc("/publish", handlers.HandlePublish)
 	http.HandleFunc("/site/", gateway.HandleGateway)
 
-	// Start background mDNS-style UDP peer discovery
+	// Start background mDNS-style UDP local peer discovery
 	go discovery.StartBroadcaster(port)
 	go discovery.StartListener(port)
 
 	addr := fmt.Sprintf("127.0.0.1:%s", port)
 	fmt.Printf("Daemon listening securely on http://%s\n", addr)
-	fmt.Println("[INFO] Background peer discovery active.")
+	fmt.Println("[INFO] Background local peer discovery & wide-area P2P active.")
 
 	if err := http.ListenAndServe(addr, nil); err != nil {
 		log.Fatalf("Daemon failed to start: %v", err)
