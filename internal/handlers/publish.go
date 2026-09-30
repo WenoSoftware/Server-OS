@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 
 	"serveros/internal/chunker"
 	"serveros/internal/storage"

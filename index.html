@@ -2,16 +2,62 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Weno Decentralized Site</title>
+    <title>Server OS - P2P Notepad Demo</title>
     <style>
-        body { font-family: sans-serif; background: #111; color: #0f0; text-align: center; padding-top: 50px; }
-        .card { border: 2px dashed #0f0; padding: 20px; display: inline-block; border-radius: 10px; }
+        body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 0 20px; }
+        textarea { width: 100%; height: 200px; padding: 10px; font-size: 16px; }
+        #status { font-weight: bold; margin-bottom: 10px; }
     </style>
 </head>
 <body>
-    <div class="card">
-        <h1>⚡ Hello from Weno Server OS!</h1>
-        <p>This page is hosted entirely peer-to-peer without central cloud servers.</p>
-    </div>
+    <h1>Server OS Collaborative Note</h1>
+    <div id="status">Connecting to node...</div>
+    <textarea id="noteInput" placeholder="Type something... changes sync across the swarm automatically."></textarea>
+
+    <script type="module">
+        import ServerOSClient from './serveros.js';
+
+        // Connect to local daemon
+        const serveros = new ServerOSClient(8080);
+        const statusEl = document.getElementById('status');
+        const inputEl = document.getElementById('noteInput');
+
+        // Check node health on load
+        async function init() {
+            const status = await serveros.getStatus();
+            if (status.online) {
+                statusEl.textContent = "Node Online & Swarm Active 🟢";
+                statusEl.style.color = "green";
+                
+                // Load initial value from local CRDT store
+                const savedVal = await serveros.get('shared-note');
+                if (savedVal) inputEl.value = savedVal;
+            } else {
+                statusEl.textContent = "Node Offline 🔴 (Run 'go run . start')";
+                statusEl.style.color = "red";
+            }
+        }
+
+        // Save changes to the CRDT database on input
+        let timeout;
+        inputEl.addEventListener('input', (e) => {
+            clearTimeout(timeout);
+            timeout = setTimeout(async () => {
+                const val = e.target.value;
+                await serveros.set('shared-note', val);
+                console.log("[App] Note saved and broadcasted to swarm.");
+            }, 500); // Debounce saves
+        });
+
+        // Poll for incoming CRDT updates from peers every 2 seconds
+        setInterval(async () => {
+            const currentVal = await serveros.get('shared-note');
+            if (currentVal && currentVal !== inputEl.value && document.activeElement !== inputEl) {
+                inputEl.value = currentVal; // Update view if a peer modified it
+            }
+        }, 2000);
+
+        init();
+    </script>
 </body>
 </html>

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -9,11 +10,12 @@ import (
 	"os"
 
 	"serveros/internal/chunker"
+	"serveros/internal/crdt"
 	"serveros/internal/discovery"
 	"serveros/internal/gateway"
 	"serveros/internal/handlers"
-	"serveros/internal/storage"
 	"serveros/internal/p2p"
+	"serveros/internal/storage"
 )
 
 func main() {
@@ -32,7 +34,19 @@ func main() {
 	// 2. Set up the wide-area libp2p chunk stream protocol handler
 	p2p.SetupChunkProtocol(p2pHost)
 
+	// 3. Initialize Pub/Sub manager for real-time node messaging
+	ctx := context.Background()
+	psManager, err := p2p.InitPubSub(ctx, p2pHost)
+	if err != nil {
+		log.Fatalf("Failed to initialize pubsub: %v", err)
+	}
+
+	// 4. Start the CRDT state synchronization engine over Pub/Sub
+	crdtState := crdt.StartCRDTSync(ctx, psManager)
+
 	command := os.Args[1]
+
+	ds.State.SetPrivKey(node.PrivKey)
 
 	switch command {
 	case "start":
@@ -40,7 +54,7 @@ func main() {
 		if len(os.Args) > 2 {
 			port = os.Args[2]
 		}
-		startDaemon(port)
+		startDaemon(port, crdtState, p2pHost.ID().String())
 
 	case "share":
 		if len(os.Args) < 3 {
@@ -64,14 +78,14 @@ func printUsage() {
 	fmt.Println("  go run . share <filepath>    - Split a file and seed its chunks into CAS storage")
 }
 
-func startDaemon(port string) {
+func startDaemon(port string, crdtState *crdt.DistributedState, authorID string) {
 	fmt.Printf("Starting Weno Server OS Daemon on port %s...\n", port)
 
 	if err := storage.InitStorage(); err != nil {
 		log.Fatalf("Failed to initialize storage: %v", err)
 	}
 
-	// Register HTTP routes
+	// Register Core HTTP routes
 	http.HandleFunc("/status", handlers.HandleStatus)
 	http.HandleFunc("/toggle", handlers.HandleToggle)
 	http.HandleFunc("/verify-chunk", handlers.HandleVerifyChunk)
@@ -79,13 +93,21 @@ func startDaemon(port string) {
 	http.HandleFunc("/publish", handlers.HandlePublish)
 	http.HandleFunc("/site/", gateway.HandleGateway)
 
+	// Register Decentralized Database (CRDT) HTTP routes
+	dbHandler := &handlers.DBHandler{
+		State:    crdtState,
+		AuthorID: authorID,
+	}
+	http.HandleFunc("/db/get", dbHandler.HandleGet)
+	http.HandleFunc("/db/set", dbHandler.HandleSet)
+
 	// Start background mDNS-style UDP local peer discovery
 	go discovery.StartBroadcaster(port)
 	go discovery.StartListener(port)
 
 	addr := fmt.Sprintf("127.0.0.1:%s", port)
 	fmt.Printf("Daemon listening securely on http://%s\n", addr)
-	fmt.Println("[INFO] Background local peer discovery & wide-area P2P active.")
+	fmt.Println("[INFO] Background local peer discovery, wide-area PubSub & CRDT database sync active.")
 
 	if err := http.ListenAndServe(addr, nil); err != nil {
 		log.Fatalf("Daemon failed to start: %v", err)

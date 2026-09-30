@@ -1,4 +1,4 @@
-package storage 
+package storage
 
 import (
 	"fmt"
@@ -34,8 +34,8 @@ func SaveChunk(hash string, data []byte) error {
 	return nil
 }
 
-// LoadChunk reads a requested chunk from disk using its hash
-func LoadChunk(hash string) ([]byte, error) {
+// GetChunk reads a chunk's binary data from local CAS storage by hash
+func GetChunk(hash string) ([]byte, error) {
 	filePath := filepath.Join(StorageDir, hash)
 
 	data, err := os.ReadFile(filePath)
@@ -44,4 +44,9 @@ func LoadChunk(hash string) ([]byte, error) {
 	}
 
 	return data, nil
+}
+
+// LoadChunk is an alias for GetChunk for backward compatibility with the assembler
+func LoadChunk(hash string) ([]byte, error) {
+	return GetChunk(hash)
 }

@@ -12,7 +12,6 @@ import (
 const ChunkProtocolID = "/serveros/chunk/1.0.0"
 
 // SetupChunkProtocol registers the stream handler on the libp2p host
-val h host.Host
 func SetupChunkProtocol(h host.Host) {
 	h.SetStreamHandler(ChunkProtocolID, func(s network.Stream) {
 		defer s.Close()
