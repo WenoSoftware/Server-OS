@@ -3,6 +3,7 @@ package crdt
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -10,11 +11,13 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
+const stateFileName = "weno_state.json"
+
 type Record struct {
 	Value     string `json:"value"`
 	Timestamp int64  `json:"timestamp"`
 	AuthorID  string `json:"author_id"`
-	Signature []byte `json:"signature"` // Cryptographic signature of the record
+	Signature []byte `json:"signature"`
 }
 
 type DistributedState struct {
@@ -24,9 +27,30 @@ type DistributedState struct {
 }
 
 func NewState() *DistributedState {
-	return &DistributedState{
+	ds := &DistributedState{
 		Storage: make(map[string]Record),
 	}
+	// Automatically load existing state from disk if it exists
+	ds.loadFromDisk()
+	return ds
+}
+
+// saveToDisk writes the current storage map to a local json file
+func (ds *DistributedState) saveToDisk() {
+	data, err := json.MarshalIndent(ds.Storage, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(stateFileName, data, 0644)
+}
+
+// loadFromDisk reads the state map from disk on startup
+func (ds *DistributedState) loadFromDisk() {
+	data, err := os.ReadFile(stateFileName)
+	if err != nil {
+		return // No existing state file found, start fresh
+	}
+	_ = json.Unmarshal(data, &ds.Storage)
 }
 
 // SetPrivKey assigns the node's private key for signing local writes
@@ -36,10 +60,9 @@ func (ds *DistributedState) SetPrivKey(privKey crypto.PrivKey) {
 	ds.privKey = privKey
 }
 
-// Set updates a key locally with a timestamp and cryptographic signature
+// Set updates a key locally, signs it, persists to disk, and returns the record
 func (ds *DistributedState) Set(key, value, authorID string) (Record, error) {
 	ds.mu.Lock()
-	defer ds.mu.Unlock()
 
 	timestamp := time.Now().UnixNano()
 	var sig []byte
@@ -49,6 +72,7 @@ func (ds *DistributedState) Set(key, value, authorID string) (Record, error) {
 		payload := fmt.Sprintf("%s:%s:%d:%s", key, value, timestamp, authorID)
 		sig, err = ds.privKey.Sign([]byte(payload))
 		if err != nil {
+			ds.mu.Unlock()
 			return Record{}, fmt.Errorf("failed to sign record: %v", err)
 		}
 	}
@@ -60,13 +84,18 @@ func (ds *DistributedState) Set(key, value, authorID string) (Record, error) {
 		Signature: sig,
 	}
 	ds.Storage[key] = rec
+	
+	// Persist changes to disk
+	ds.saveToDisk()
+	ds.mu.Unlock()
+
 	return rec, nil
 }
 
 // verifyRecord checks if the cryptographic signature matches the author ID
 func verifyRecord(key string, rec Record) bool {
 	if len(rec.Signature) == 0 {
-		return false // Reject unsigned records for strict security
+		return false
 	}
 
 	pid, err := peer.Decode(rec.AuthorID)
@@ -84,7 +113,7 @@ func verifyRecord(key string, rec Record) bool {
 	return err == nil && valid
 }
 
-// Merge takes incoming peer state, validates signatures, and merges via Last-Write-Wins (LWW)
+// Merge takes incoming peer state, validates signatures, merges via LWW, and saves to disk
 func (ds *DistributedState) Merge(incomingJSON []byte) error {
 	var incoming map[string]Record
 	if err := json.Unmarshal(incomingJSON, &incoming); err != nil {
@@ -94,8 +123,8 @@ func (ds *DistributedState) Merge(incomingJSON []byte) error {
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
 
+	updated := false
 	for k, incRec := range incoming {
-		// Drop untrusted or forged records immediately
 		if !verifyRecord(k, incRec) {
 			continue
 		}
@@ -103,7 +132,12 @@ func (ds *DistributedState) Merge(incomingJSON []byte) error {
 		locRec, exists := ds.Storage[k]
 		if !exists || incRec.Timestamp > locRec.Timestamp {
 			ds.Storage[k] = incRec
+			updated = true
 		}
+	}
+
+	if updated {
+		ds.saveToDisk()
 	}
 	return nil
 }
